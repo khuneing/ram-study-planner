@@ -105,7 +105,7 @@ def get_courses_filtered():
         traceback.print_exc()
         print("--- !!! END ERROR !!! ---\n")
         return jsonify({"error": str(e)}), 500
-
+load_data()
 if __name__ == '__main__':
-    load_data()
+    
     app.run(debug=True)
