@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ram Study Planner (Final)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+        body { background-color: #f0f2f5; font-family: 'Sarabun', sans-serif; }
+        .course-card { 
+            transition: all 0.3s ease-in-out; 
+            border-left: 5px solid #0d6efd; 
+            border-radius: .5rem;
+            animation: fadeIn 0.5s;
+        }
+        .course-card:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.1) !important; }
+        .controls .card-header { font-weight: bold; background-color: #343a40; color: white; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .noUi-connect { background: #0d6efd; }
+        .noUi-handle { border-radius: 50%; box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+    </style>
+</head>
+<body>
+    <div class="container-fluid my-4">
+        <div class="p-4 mb-4 bg-white rounded-3 shadow-sm">
+            <h1 class="display-5 fw-bold">Ram Study Planner</h1>
+            <p class="fs-4">ระบบจัดตารางเรียนอัจฉริยะ</p>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-4 controls">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header"><h4>1. เลือกสาขา</h4></div>
+                    <div class="card-body">
+                        <select id="program-select" class="form-select form-select-lg">
+                            <option value="" selected disabled>-- กรุณาเลือกสาขา --</option>
+                            {% for program in programs %}
+                            <option value="{{ program }}">{{ program }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm">
+                    <div class="card-header"><h4>2. กรองตามเวลาที่ว่าง</h4></div>
+                    <div class="card-body">
+                        <h5>วันที่สะดวก</h5>
+                        <div id="day-filters" class="mb-4"></div>
+                        <h5>ช่วงเวลาที่สะดวก</h5>
+                        <div id="time-slider" class="mt-4 mb-3"></div>
+                        <div class="d-flex justify-content-between">
+                            <span id="time-start-label" class="badge bg-primary">07:00</span>
+                            <span id="time-end-label" class="badge bg-primary">20:00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-8">
+                <div class="card shadow-sm">
+                    <div class="card-header">
+                        <h4>ผลลัพธ์: พบ <span id="course-count" class="badge bg-success">0</span> วิชาที่ตรงเงื่อนไข</h4>
+                    </div>
+                    <div id="results-container" class="p-3" style="max-height: 80vh; overflow-y: auto;">
+                         <div id="placeholder" class="text-center p-5">
+                            <p class="text-muted fs-5">กรุณาเลือกสาขาวิชาเพื่อเริ่มใช้งาน</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const state = {
+                filters: {
+                    program_code: '',
+                    days: [],
+                    startTime: '07:00',
+                    endTime: '20:00'
+                }
+            };
+            let debounceTimer;
+
+            const programSelect = document.getElementById('program-select');
+            const resultsContainer = document.getElementById('results-container');
+            const timeSlider = document.getElementById('time-slider');
+            const courseCountEl = document.getElementById('course-count');
+
+            function debounce(func, delay) {
+                return (...args) => {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(() => func.apply(this, args), delay);
+                };
+            }
+
+            async function fetchAndUpdate() {
+                if (!state.filters.program_code) return;
+                
+                resultsContainer.innerHTML = '<div class="d-flex justify-content-center p-5"><div class="spinner-border text-primary" role="status"></div></div>';
+                
+                try {
+                    const response = await fetch('/get_courses_filtered', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(state.filters)
+                    });
+                    if (!response.ok) throw new Error('Network response was not ok');
+                    const courses = await response.json();
+                    renderCourses(courses);
+                } catch (error) {
+                    console.error("Fetch error:", error);
+                    courseCountEl.innerText = '0';
+                    resultsContainer.innerHTML = '<div class="text-center p-5"><p class="text-danger">เกิดข้อผิดพลาดในการดึงข้อมูล</p></div>';
+                }
+            }
+
+            const debouncedFetch = debounce(fetchAndUpdate, 400);
+
+            function renderCourses(courses) {
+                courseCountEl.innerText = courses.length;
+                resultsContainer.innerHTML = '';
+
+                if (courses.length === 0) {
+                     if (state.filters.program_code) {
+                         resultsContainer.innerHTML = '<div class="text-center p-5"><p class="text-muted">ไม่พบวิชาที่ตรงกับเงื่อนไขตัวกรอง</p></div>';
+                    } else {
+                         resultsContainer.innerHTML = '<div class="text-center p-5"><p class="text-muted fs-5">กรุณาเลือกสาขาวิชาเพื่อเริ่มใช้งาน</p></div>';
+                    }
+                    return;
+                }
+
+                courses.sort((a, b) => a.course_code.localeCompare(b.course_code)).forEach(course => {
+                    const card = document.createElement('div');
+                    card.className = 'course-card card shadow-sm mb-3';
+                    
+                    let sectionsHtml = course.sections.map(sec => `
+                        <li class="list-group-item">
+                            <i class="bi bi-clock-fill text-primary"></i> ${sec.day_full} ${sec.start_time}-${sec.end_time} 
+                            <span class="badge bg-secondary float-end">ห้อง: ${sec.room || 'N/A'}</span>
+                        </li>`).join('');
+                        
+                    const type_map = { 'core': 'วิชาบังคับ', 'elective': 'วิชาเลือก' };
+                    const type_class = { 'core': 'text-bg-warning', 'elective': 'text-bg-info' };
+
+                    card.innerHTML = `
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                 <h5 class="card-title mb-0">${course.course_code} - ${course.course_name}</h5>
+                                 <span class="badge rounded-pill ${type_class[course.type] || 'text-bg-light'}">${type_map[course.type] || course.type}</span>
+                            </div>
+                            <p class="mb-1 mt-2 small"><strong>รอบเรียนที่ตรงเงื่อนไข:</strong></p>
+                            <ul class="list-group list-group-flush">${sectionsHtml || '<li class="list-group-item">ไม่มีข้อมูลรอบเรียน</li>'}</ul>
+                             <p class="card-text mt-2"><small class="text-muted"><strong><i class="bi bi-calendar-check"></i> สอบ:</strong> ${course.exam_date || 'N/A'} (คาบ ${course.exam_session || 'N/A'})</small></p>
+                        </div>
+                    `;
+                    resultsContainer.appendChild(card);
+                });
+            }
+
+            function renderDayFilters() {
+                const dayFiltersContainer = document.getElementById('day-filters');
+                const days = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+                dayFiltersContainer.innerHTML = days.map(day => `
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input filter-check" type="checkbox" value="${day}" id="day-${day}">
+                        <label class="form-check-label" for="day-${day}">${day}</label>
+                    </div>`).join('');
+                document.querySelectorAll('.filter-check').forEach(el => el.addEventListener('change', handleFilterChange));
+            }
+
+            function handleFilterChange(event) {
+                const { value, checked } = event.target;
+                const daysSet = new Set(state.filters.days);
+                if (checked) {
+                    daysSet.add(value);
+                } else {
+                    daysSet.delete(value);
+                }
+                state.filters.days = Array.from(daysSet);
+                debouncedFetch();
+            }
+
+            programSelect.addEventListener('change', () => {
+                state.filters.program_code = programSelect.value;
+                state.filters.days = [];
+                document.querySelectorAll('.filter-check').forEach(el => el.checked = false);
+                timeSlider.noUiSlider.set([7 * 60, 20 * 60]);
+                fetchAndUpdate();
+            });
+            
+            noUiSlider.create(timeSlider, {
+                start: [7 * 60, 20 * 60],
+                connect: true,
+                range: { 'min': 7 * 60, 'max': 20 * 60 },
+                step: 15,
+                tooltips: [true, true],
+                format: {
+                    to: (value) => {
+                        const h = Math.floor(value / 60);
+                        const m = value % 60;
+                        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                    },
+                    from: (value) => Number(value.replace(':', ''))
+                }
+            });
+            
+            timeSlider.noUiSlider.on('update', (values) => {
+                document.getElementById('time-start-label').textContent = values[0];
+                document.getElementById('time-end-label').textContent = values[1];
+            });
+
+            timeSlider.noUiSlider.on('change', (values) => {
+                 state.filters.startTime = values[0];
+                 state.filters.endTime = values[1];
+                 debouncedFetch();
+            });
+
+            renderDayFilters();
+        });
+    </script>
+</body>
+</html>
