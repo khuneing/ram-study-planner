@@ -55,16 +55,13 @@ def get_courses_filtered():
         if not program_code:
             return jsonify([])
 
-        # 1. Filter by program
         program_courses_list = DF_REQ[DF_REQ['program_code'] == program_code]['course_code'].tolist()
         df = DF_COURSES[DF_COURSES['course_code'].isin(program_courses_list)].copy()
         
-        # 2. Filter by selected days
         selected_days = filters.get('days', [])
         if selected_days:
             df = df[df['day_full'].isin(selected_days)]
         
-        # 3. Filter by time range
         start_time_filter = datetime.strptime(filters.get('startTime', '00:00'), '%H:%M').time()
         end_time_filter = datetime.strptime(filters.get('endTime', '23:59'), '%H:%M').time()
         
@@ -74,7 +71,7 @@ def get_courses_filtered():
         if final_df.empty:
             return jsonify([])
 
-        # 4. *** NEW, MORE ROBUST GROUPING LOGIC ***
+        # *** NEW, MORE ROBUST GROUPING LOGIC ***
         courses_output_dict = {}
         for _, section in final_df.iterrows():
             code = section['course_code']
@@ -87,12 +84,7 @@ def get_courses_filtered():
                     'exam_session': section['exam_session'],
                     'sections': []
                 }
-            
-            # *** Fix for JSON serialization: Convert time objects to strings ***
-            section_dict = section.to_dict()
-            section_dict['start_time_obj'] = str(section_dict['start_time_obj'])
-            section_dict['end_time_obj'] = str(section_dict['end_time_obj'])
-            courses_output_dict[code]['sections'].append(section_dict)
+            courses_output_dict[code]['sections'].append(section.to_dict())
         
         return jsonify(list(courses_output_dict.values()))
 
